@@ -45,6 +45,27 @@ async def get_daily_room():
             )
             return room_config.url
 
+# rest API call to NOAA to get current weather
+async def get_noaa_simple_weather(latitude: float, longitude: float, **kwargs):
+    n = NOAA()
+    description = False
+    fahrenheit_temp = 0
+    try:
+        observations = n.get_observations_by_lat_lon(latitude, longitude, num_of_stations=1)
+        for observation in observations:
+            description = observation["textDescription"]
+            celsius_temp = observation["temperature"]["value"]
+            if description:
+                break
+
+        fahrenheit_temp = (celsius_temp * 9 / 5) + 32
+
+    except Exception as e:
+        logger.log(new_level_symbol, f"Error getting NOAA weather: {e}")
+
+    logger.log(new_level_symbol, f"get_noaa_simple_weather * results: {description}, {fahrenheit_temp}")
+    return description, fahrenheit_temp
+
 async def main():
     bot_name = "⛅︎ current  w e a t h e r  bot ⛅︎"
     room_url = await get_daily_room()
@@ -97,10 +118,10 @@ async def main():
                     "parameters": {
                         "type": "object",
                         "properties": {
-                         "location": {
+                            "location": {
                                 "type": "string",
                                 "description": "The location for the weather request.",
-                            },                            
+                            },
                             "latitude": {
                                 "type": "string",
                                 "description": "Provide this by infering the latitude from the location. Supply latitude as a string. For example, '42.3601'.",
@@ -108,7 +129,7 @@ async def main():
                             "longitude": {
                                 "type": "string",
                                 "description": "Provide this by infering the longitude from the location. Supply longitude as a string. For example, '-71.0589'.",
-                            },                                
+                            },
                         },
                         "required": ["location", "latitude", "longitude"],
                     },
@@ -123,48 +144,27 @@ async def main():
         tools=tools,
     )
 
-    ## tool calling
-    async def get_noaa_simple_weather(latitude: float, longitude: float, **kwargs):
-        logger.log(new_level_symbol, f"get_noaa_simple_weather for: '{latitude}, {longitude}'")
-        n = NOAA()
-        description = False
-        fahrenheit_temp = 0
-        try:
-            observations = n.get_observations_by_lat_lon(latitude, longitude, num_of_stations=1)
-            for observation in observations:
-                description = observation["textDescription"]
-                celsius_temp = observation["temperature"]["value"]
-                if description:
-                    break
-
-            fahrenheit_temp = (celsius_temp * 9 / 5) + 32
-
-        except Exception as e:
-            logger.log(new_level_symbol, f"Error getting NOAA weather: {e}")
-
-        logger.log(new_level_symbol, f"get_noaa_simple_weather results: {description}, {fahrenheit_temp}")
-        return description, fahrenheit_temp
-
     async def fetch_weather_from_api(
         function_name, tool_call_id, args, llm, context, result_callback
     ):
-        logger.log(new_level_symbol, f"fetch_weather_from_api * args: {args}")
         location = args["location"]
         latitude = float(args["latitude"])
         longitude = float(args["longitude"])
         description, fahrenheit_temp = None, None
 
+        logger.log(new_level_symbol, f"fetch_weather_from_api * location: {location} - '{latitude}, {longitude}'")
+
         if latitude and longitude:
+            # actual external rest API call
             description, fahrenheit_temp = await get_noaa_simple_weather(latitude, longitude)
         else:
             return await result_callback("Sorry, I don't recognize that location.")
-
 
         if not fahrenheit_temp:
             return await result_callback(
                 f"I'm sorry, I can't get the weather for {location} right now. Can you ask again please?"
             )
-        logger.log(new_level_symbol, f"fetch_weather_from_api results: {description}, {fahrenheit_temp}")
+
         if not description:
             return await result_callback(
                 f"According to noah, the weather in {location} is currently {round(fahrenheit_temp)} degrees."
@@ -176,6 +176,7 @@ async def main():
 
     llm.register_function("get_weather", fetch_weather_from_api)
 
+    # continue to setup pipeline
     context = OpenAILLMContext(
         [{"role": "user", "content": "Say hello. Make a subtle weather pun."}],
     )
@@ -199,6 +200,7 @@ async def main():
         ),
     )
 
+    # set event handlers
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):
         await task.queue_frames([context_aggregator.user().get_context_frame()])
@@ -211,7 +213,6 @@ async def main():
     runner = PipelineRunner()
 
     await runner.run(task)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
