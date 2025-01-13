@@ -1,9 +1,3 @@
-#
-# Copyright (c) 2024, Daily
-#
-# SPDX-License-Identifier: BSD 2-Clause License
-#
-
 import aiohttp
 import asyncio
 import os
@@ -76,10 +70,6 @@ async def main():
             audio_out_enabled=True,
             vad_enabled=True,
             vad_audio_passthrough=True,
-            # set stop_secs to something roughly similar to the internal setting
-            # of the Multimodal Live api, just to align events. This doesn't really
-            # matter because we can only use the Multimodal Live API's phrase
-            # endpointing, for now.
             vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.5)),
         ),
     )
